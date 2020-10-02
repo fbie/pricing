@@ -20,6 +20,16 @@ module Pricing =
             | Call1 of (float -> float) * e_num
             | Call2 of (float -> float -> float) * e_num * e_num
 
+        let mk_const =
+            let minus_one = Const 1.0
+            let zero = Const 0.0
+            let plus_one  = Const 1.0
+            function
+                | -1.0 -> minus_one
+                |  0.0 -> zero
+                |  1.0 -> plus_one
+                |  f   -> Const f
+
         let rec private mix_bool t r = function
             | True -> True
             | False -> False
@@ -52,26 +62,24 @@ module Pricing =
             | Const n as cst -> cst
             | Add (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
-                    | Const x, Const y -> Const (x - y)
-                    | Const 0.0, e2 -> e2
-                    | e1, Const 0.0 -> e1
+                    | Const x, Const y -> mk_const (x + y)
+                    | Const 0.0, e | e, Const 0.0 -> e
                     | e1, e2 -> Add (e1, e2)
             | Sub (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
-                    | Const x, Const y -> Const (x - y)
+                    | Const x, Const y -> mk_const (x - y)
                     | e, Const 0.0 -> e
                     | e1, e2 -> Sub (e1, e2)
             | Mul (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
-                    | Const x, Const y -> Const (x * y)
-                    | Const 0.0, _ | _, Const 0.0 -> Const 0.0
-                    | Const 1.0, e -> e
-                    | e, Const 1.0 -> e
+                    | Const x, Const y -> mk_const (x * y)
+                    | Const 0.0, _ | _, Const 0.0 -> mk_const 0.0
+                    | Const 1.0, e | e, Const 1.0 -> e
                     | e1, e2 -> Mul (e1, e2)
             | Div (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
-                    | Const x, Const y -> Const (x / y)
-                    | Const 0.0, _ -> Const 0.0
+                    | Const x, Const y -> mk_const (x / y)
+                    | Const 0.0, _ -> mk_const 0.0
                     | _, Const 0.0 -> failwith "Division by zero"
                     | e, Const 1.0 -> e
                     | e1, e2 -> Div (e1, e2)
@@ -82,11 +90,11 @@ module Pricing =
                     | cond -> If (cond, mix_num t r e1, mix_num t r e2)
             | Call1 (f, e) ->
                match mix_num t r e with
-                    | Const c -> Const (f c)
+                    | Const c -> mk_const (f c)
                     | e -> Call1 (f, e)
             | Call2 (f, e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
-                    | Const c1, Const c2 -> Const (f c1 c2)
+                    | Const c1, Const c2 -> mk_const (f c1 c2)
                     | Const c1, e -> Call1 (f c1, e)
                     | e1, e2 -> Call2 (f, e1, e2)
 
@@ -94,10 +102,10 @@ module Pricing =
             mix_num Time Result
 
         let mix t =
-            mix_num (Const t) Result
+            mix_num (mk_const t) Result
 
         let eval t r =
-            mix_num (Const t) (Const r)
+            mix_num (mk_const t) (mk_const r)
 
         let rec private invert_bool = function
             | Not e -> Not (invert_bool e)
@@ -139,7 +147,7 @@ module Pricing =
         // Redefining these gives a bunch of warnings.
         let x = Result
         let t = Time
-        let cst n = Const n
+        let cst n = mk_const n
         let (+) e1 e2 = Add (e1, e2)
         let (-) e1 e2 = Sub (e1, e2)
         let (*) e1 e2 = Mul (e1, e2)
@@ -165,5 +173,25 @@ module Pricing =
         let log = call2 (curry Math.Log)
         let pow = call2 (curry Math.Pow)
 
-        let e = (cst 2.0) * (cst 3.0) + (iff (t > (cst 0.0)) (x - t) (x - (cst 1.0)))
-        let test () = eval 1.0 1.0 e
+    module Test =
+        open Expr
+        open Embedded
+
+        let e1 = cst 0.0 + cst 1.0
+        let e2 = cst 1.0 + cst 0.0
+        let e3 = cst 1.0 * cst 2.0
+        let e4 = cst 2.0 / cst 1.0
+        let e5 = (cst 2.0) * (cst 3.0) + (iff (t > (cst 0.0)) (x - t) (x + (cst 1.0)))
+
+        let all = [e1; e2; e3; e4; e5]
+
+        let run = eval -1.0 1.0
+
+        let run_all () =
+            all
+            |> List.map run
+            |> List.iter (printfn "%A")
+
+        // A good QuickCheck candidate.
+        let invert_all () =
+            List.map (fun e -> invert (invert e)) all
