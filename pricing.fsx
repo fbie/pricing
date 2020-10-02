@@ -51,72 +51,78 @@ module Pricing =
             | Call2 (f, e1, e2) ->
                 f (eval_num time result e1) (eval_num time result e2)
 
-        let rec mix_bool t = function
+        let rec mix_bool t r = function
             | True -> True
             | False -> False
             | Not e ->
-                match mix_bool t e with
+                match mix_bool t r e with
                     | True -> False
                     | False -> True
                     | e -> Not e
             | And (e1, e2) ->
-                match mix_bool t e1, mix_bool t e2 with
+                match mix_bool t r e1, mix_bool t r e2 with
                     | True, e -> e
                     | False, _ -> False
                     | e1, e2 -> And (e1, e2)
             | Or (e1, e2) ->
-                match mix_bool t e1, mix_bool t e2 with
+                match mix_bool t r e1, mix_bool t r e2 with
                     | True, _ -> True
                     | False, e -> e
                     | e1, e2 -> Or (e1, e2)
             | Eq (e1, e2) ->
-                match mix_num t e1, mix_num t e2 with
+                match mix_num t r e1, mix_num t r e2 with
                     | Const x, Const y -> if x = y then True else False
                     | e1, e2 -> Eq (e1, e2)
             | Gt (e1, e2) ->
-                match mix_num t e1, mix_num t e2 with
+                match mix_num t r e1, mix_num t r e2 with
                     | Const x, Const y -> if x > y then True else False
                     | e1, e2 -> Gt (e1, e2)
-        and mix_num t = function
-            | Time -> Const t // Propagate t as a value.
-            | Result -> Result
+        and mix_num t r = function
+            | Time -> t
+            | Result -> r
             | Const n as cst -> cst
             | Add (e1, e2) ->
-                match mix_num t e1, mix_num t e2 with
+                match mix_num t r e1, mix_num t r e2 with
                     | Const 0.0, e2 -> e2
                     | e1, Const 0.0 -> e1
                     | e1, e2 -> Add (e1, e2)
             | Sub (e1, e2) ->
-                match mix_num t e1, mix_num t e2 with
+                match mix_num t r e1, mix_num t r e2 with
                     | Const 0.0, Const c -> Const (-c)
                     | e, Const 0.0 -> e
                     | e1, e2 -> Sub (e1, e2)
             | Mul (e1, e2) ->
-                match mix_num t e1, mix_num t e2 with
+                match mix_num t r e1, mix_num t r e2 with
                     | Const 0.0, _ | _, Const 0.0 -> Const 0.0
                     | Const 1.0, e -> e
                     | e, Const 1.0 -> e
                     | e1, e2 -> Mul (e1, e2)
             | Div (e1, e2) ->
-                match mix_num t e1, mix_num t e2 with
+                match mix_num t r e1, mix_num t r e2 with
                     | Const 0.0, _ -> Const 0.0
                     | _, Const 0.0 -> failwith "Division by zero"
                     | e, Const 1.0 -> e
                     | e1, e2 -> Div (e1, e2)
             | If (cond, e1, e2) ->
-                match mix_bool t cond with
-                    | True -> mix_num t e1
-                    | False -> mix_num t e2
-                    | cond -> If (cond, mix_num t e1, mix_num t e2)
+                match mix_bool t r cond with
+                    | True -> mix_num t r e1
+                    | False -> mix_num t r e2
+                    | cond -> If (cond, mix_num t r e1, mix_num t r e2)
             | Call1 (f, e) ->
-               match mix_num t e with
+               match mix_num t r e with
                     | Const c -> Const (f c)
                     | e -> Call1 (f, e)
             | Call2 (f, e1, e2) ->
-                match mix_num t e1, mix_num t e2 with
+                match mix_num t r e1, mix_num t r e2 with
                     | Const c1, Const c2 -> Const (f c1 c2)
                     | Const c1, e -> Call1 (f c1, e)
                     | e1, e2 -> Call2 (f, e1, e2)
+
+        let reduce e =
+            mix_num Time Result e
+
+        let mix t e =
+            mix_num (Const t) Result e
 
         let rec invert_bool = function
             | Not e -> Not (invert_bool e)
