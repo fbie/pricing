@@ -6,8 +6,8 @@ module Pricing =
             | Not of e_bool
             | Or of e_bool * e_bool
             | And of e_bool * e_bool
-            | NumEq of e_num * e_num
-            | NumGt of e_num * e_num
+            | Eq of e_num * e_num
+            | Gt of e_num * e_num
         and e_num =
             | Result
             | Const of float
@@ -27,9 +27,9 @@ module Pricing =
                 eval_bool result e1 || eval_bool result e2
             | And (e1, e2) ->
                 eval_bool result e1 && eval_bool result e2
-            | NumEq (e1, e2) ->
+            | Eq (e1, e2) ->
                 eval_num result e1 = eval_num result e2
-            | NumGt (e1, e2) ->
+            | Gt (e1, e2) ->
                 eval_num result e1 > eval_num result e2
         and eval_num result = function
             | Result -> result
@@ -49,6 +49,38 @@ module Pricing =
             | Call2 (f, e1, e2) ->
                 f (eval_num result e1) (eval_num result e2)
 
-   // Test it in the top-level:
-   // open Expr
-   // assert (eval_num 4 (Mul (Result, Const 2)) = 8)
+    module Embedded =
+        open Expr
+        open System
+
+        // Redefining these gives a bunch of warnings.
+        let x = Result
+        let cst n = Const n
+        let (+) e1 e2 = Add (e1, e2)
+        let (-) e1 e2 = Sub (e1, e2)
+        let (*) e1 e2 = Mul (e1, e2)
+        let (/) e1 e2 = Div (e1, e2)
+        let iff cond e1 e2 = If (cond, e1, e2)
+
+        let (!) e = Not e
+        let (||) e1 e2 = Or (e1, e2)
+        let (&&) e1 e2 = And (e1, e2)
+        let (=) e1 e2 = Eq (e1, e2)
+        let (>) e1 e2 = Gt (e1, e2)
+        let (>=) e1 e2 = (e1 = e2) || (e1 > e2)
+        let (<) e1 e2 = !((e1 = e2) || (e1 > e2)) // Syntactic sugar.
+        let (<=) e1 e2 = (e1 = e2) || (e1 < e2)
+
+        let private call1 f e = Call1 (f, e)
+
+        let sqrt = call1 Math.Sqrt
+
+        let private call2 f e1 e2 = Call2 (f, e1, e2)
+        let private curry f a b = f (a, b)
+
+        let log = call2 (curry Math.Log)
+        let pow = call2 (curry Math.Pow)
+
+        let test () =
+            // Operators precedence is maintained.
+            eval_num 1.0 ((cst 2.0) * (cst 3.0) + x)
