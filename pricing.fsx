@@ -29,15 +29,15 @@ module Pricing =
                     | False -> True
                     | e -> Not e
             | And (e1, e2) ->
-                match mix_bool t r e1, mix_bool t r e2 with
-                    | True, e -> e
-                    | False, _ -> False
-                    | e1, e2 -> And (e1, e2)
+                match mix_bool t r e1 with
+                    | True -> mix_bool t r e2
+                    | False -> False
+                    | e1 -> And (e1, mix_bool t r e2)
             | Or (e1, e2) ->
-                match mix_bool t r e1, mix_bool t r e2 with
-                    | True, _ -> True
-                    | False, e -> e
-                    | e1, e2 -> Or (e1, e2)
+                match mix_bool t r e1 with
+                    | True -> True
+                    | False -> mix_bool t r e2
+                    | e1 -> Or (e1, mix_bool t r e2)
             | Eq (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
                     | Const x, Const y -> if x = y then True else False
