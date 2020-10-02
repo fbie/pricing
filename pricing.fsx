@@ -20,38 +20,7 @@ module Pricing =
             | Call1 of (float -> float) * e_num
             | Call2 of (float -> float -> float) * e_num * e_num
 
-        let rec eval_bool time result = function
-            | True -> true
-            | False -> false
-            | Not e -> not (eval_bool time result e)
-            | Or (e1, e2) ->
-                eval_bool time result e1 || eval_bool time result e2
-            | And (e1, e2) ->
-                eval_bool time result e1 && eval_bool time result e2
-            | Eq (e1, e2) ->
-                eval_num time result e1 = eval_num time result e2
-            | Gt (e1, e2) ->
-                eval_num time result e1 > eval_num time result e2
-        and eval_num time result = function
-            | Time -> time
-            | Result -> result
-            | Const n -> n
-            | Add (e1, e2) ->
-                eval_num time result e1 + eval_num time result e2
-            | Sub (e1, e2) ->
-                eval_num time result e1 - eval_num time result e2
-            | Mul (e1, e2) ->
-                eval_num time result e1 * eval_num time result e2
-            | Div (e1, e2) ->
-                eval_num time result e1 / eval_num time result e2
-            | If (cond, e1, e2) ->
-                if eval_bool time result cond then eval_num time result e1 else eval_num time result e2
-            | Call1 (f, e) ->
-                f (eval_num time result e)
-            | Call2 (f, e1, e2) ->
-                f (eval_num time result e1) (eval_num time result e2)
-
-        let rec mix_bool t r = function
+        let rec private mix_bool t r = function
             | True -> True
             | False -> False
             | Not e ->
@@ -77,28 +46,31 @@ module Pricing =
                 match mix_num t r e1, mix_num t r e2 with
                     | Const x, Const y -> if x > y then True else False
                     | e1, e2 -> Gt (e1, e2)
-        and mix_num t r = function
+        and private mix_num t r = function
             | Time -> t
             | Result -> r
             | Const n as cst -> cst
             | Add (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
+                    | Const x, Const y -> Const (x - y)
                     | Const 0.0, e2 -> e2
                     | e1, Const 0.0 -> e1
                     | e1, e2 -> Add (e1, e2)
             | Sub (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
-                    | Const 0.0, Const c -> Const (-c)
+                    | Const x, Const y -> Const (x - y)
                     | e, Const 0.0 -> e
                     | e1, e2 -> Sub (e1, e2)
             | Mul (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
+                    | Const x, Const y -> Const (x * y)
                     | Const 0.0, _ | _, Const 0.0 -> Const 0.0
                     | Const 1.0, e -> e
                     | e, Const 1.0 -> e
                     | e1, e2 -> Mul (e1, e2)
             | Div (e1, e2) ->
                 match mix_num t r e1, mix_num t r e2 with
+                    | Const x, Const y -> Const (x / y)
                     | Const 0.0, _ -> Const 0.0
                     | _, Const 0.0 -> failwith "Division by zero"
                     | e, Const 1.0 -> e
@@ -118,13 +90,16 @@ module Pricing =
                     | Const c1, e -> Call1 (f c1, e)
                     | e1, e2 -> Call2 (f, e1, e2)
 
-        let reduce e =
-            mix_num Time Result e
+        let reduce =
+            mix_num Time Result
 
-        let mix t e =
-            mix_num (Const t) Result e
+        let mix t =
+            mix_num (Const t) Result
 
-        let rec invert_bool = function
+        let eval t r =
+            mix_num (Const t) (Const r)
+
+        let rec private invert_bool = function
             | Not e -> Not (invert_bool e)
             | Or (e1, e2) ->
                 Or (invert_bool e1, invert_bool e2)
@@ -136,7 +111,7 @@ module Pricing =
                 Gt (invert_num e1, invert_num e2)
             | True -> True
             | False -> False
-        and invert_num = function
+        and private invert_num = function
             | Time -> Time
             | Result -> Result
             | Const _ as c -> c
@@ -155,6 +130,7 @@ module Pricing =
             | Call2 (f, e1, e2) ->
                 Call2 (f, invert_num e1, invert_num e2)
 
+        let invert = invert_num
 
     module Embedded =
         open Expr
@@ -190,4 +166,4 @@ module Pricing =
         let pow = call2 (curry Math.Pow)
 
         let e = (cst 2.0) * (cst 3.0) + (iff (t > (cst 0.0)) (x - t) (x - (cst 1.0)))
-        let test () = eval_num 1.0 1.0 e
+        let test () = eval 1.0 1.0 e
